@@ -13,11 +13,11 @@ class TestIntegration:
     """Integration tests that test multiple components together"""
 
     @patch("src.agents.hf_pipeline")
-    @patch("src.rag.hf_pipeline")
+    @patch("src.rag_methods.rag.hf_pipeline")
     def test_rag_agent_with_basic_corpus(self, mock_rag_pipeline, mock_agent_pipeline):
         """Test RAGAgent with basic corpus integration"""
         from src.agents import RAGAgent
-        from src.rag import VectorStoreRAGPipeline
+        from src.rag_methods.rag import VectorStoreRAGPipeline
 
         # Setup mocks for both pipelines
         mock_gen = Mock()
@@ -89,10 +89,10 @@ class TestIntegration:
         assert scores == []
         assert metadata == []
 
-    @patch("src.rag.hf_pipeline")
+    @patch("src.rag_methods.rag.hf_pipeline")
     def test_rag_pipeline_error_recovery(self, mock_hf_pipeline):
         """Test RAG pipeline error recovery mechanisms"""
-        from src.rag import VectorStoreRAGPipeline
+        from src.rag_methods.rag import VectorStoreRAGPipeline
 
         # Setup failing pipeline
         mock_gen = Mock()

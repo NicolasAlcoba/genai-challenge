@@ -1,8 +1,9 @@
 GEN_MODEL = "tiiuae/Falcon3-1B-Instruct"
-MAX_NEW_TOKENS = 256
+MAX_NEW_TOKENS = 3072
 MIN_NEW_TOKENS = 8
 NUM_BEAMS = 3
 EARLY_STOPPING = True
+TEMPERATURE = 0.1
 
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 TOP_K = 5

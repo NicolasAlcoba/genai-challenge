@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import Mock, patch, MagicMock
-from src.rag import BaseRAGPipeline, VectorStoreRAGPipeline
+from src.rag_methods.rag import BaseRAGPipeline, VectorStoreRAGPipeline
 from src.config import BASIC_CORPUS
 
 

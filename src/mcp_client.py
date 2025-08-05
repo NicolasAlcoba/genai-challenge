@@ -21,12 +21,16 @@ class RAGMCPClient:
         server_script_path: str | None = None,
         vectorstore_path: str | None = None,
         pdf_path: str | None = None,
+        use_hybrid: bool = False,
+        use_balanced: bool = False,
     ):
         self.server_script_path = server_script_path or str(
             Path(__file__).parent / "mcp_server.py"
         )
         self.vectorstore_path = vectorstore_path
         self.pdf_path = pdf_path
+        self.use_hybrid = use_hybrid
+        self.use_optimized = use_optimized
         self._session = None
         self._read_stream = None
         self._write_stream = None
@@ -39,6 +43,11 @@ class RAGMCPClient:
             server_args.extend(["--vectorstore", self.vectorstore_path])
         elif self.pdf_path:
             server_args.extend(["--pdf", self.pdf_path])
+        
+        if self.use_hybrid:
+            server_args.append("--use-hybrid")
+        elif self.use_optimized:
+            server_args.append("--use-optimized")
 
         # Prepare environment variables for the server subprocess
         env = os.environ.copy()

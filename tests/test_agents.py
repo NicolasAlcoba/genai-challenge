@@ -5,7 +5,7 @@ Tests for the agents module
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 from src.agents import BaseAgent, RAGAgent
-from src.rag import BaseRAGPipeline
+from src.rag_methods.rag import BaseRAGPipeline
 
 
 class TestBaseAgent:

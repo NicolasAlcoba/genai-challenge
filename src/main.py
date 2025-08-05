@@ -4,7 +4,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict
 
 from src.config import PDF_URL
 
@@ -56,25 +56,63 @@ def setup_logging(debug: bool = False):
         os.environ["DISABLE_TQDM"] = "true"
 
 
-def run_evaluation():
+def run_evaluation(use_hybrid: bool = False, use_optimized: bool = False):
     try:
         from src.evaluation import RAGEvaluator
+        from src.agents import RAGAgent
+        from src.vector_store import VectorStore
 
-        logger.info("TODO: Implement evaluation suite")
-    except ImportError:
-        logger.info("TODO: Implement evaluation suite")
+        # Initialize components
+        vector_store = VectorStore()
+        vector_store.load()
+        
+        if use_hybrid:
+            from src.rag_methods.hybrid_rag import ImprovedVectorStoreRAGPipeline
+            logger.info("Using Hybrid RAG Pipeline")
+            rag_pipeline = ImprovedVectorStoreRAGPipeline(vector_store)
+        elif use_optimized:
+            from src.rag_methods.balanced_rag import OptimizedVectorStoreRAGPipeline, BalancedVectorStoreRAGPipeline, SimpleImprovedRAG
+            logger.info("Using Optimized RAG Pipeline")
+            # rag_pipeline = OptimizedVectorStoreRAGPipeline(vector_store)
+            # rag_pipeline = BalancedVectorStoreRAGPipeline(vector_store)
+            rag_pipeline = SimpleImprovedRAG(vector_store)
+        else:
+            from src.rag_methods.rag import VectorStoreRAGPipeline
+            logger.info("Using Standard RAG Pipeline")
+            rag_pipeline = VectorStoreRAGPipeline(vector_store)
+            
+        rag_agent = RAGAgent(rag_pipeline)
+        evaluator = RAGEvaluator(rag_agent)
+    
+        # Run evaluation
+        logger.info("Starting RAG evaluation...")
+        results = evaluator.run_evaluation()
+
+        # Print summary
+        print("\n=== Evaluation Complete ===")
+        print(f"Evaluated {results['aggregate_metrics']['total_samples']} samples")
+        print(f"Average Answer Relevance: {results['aggregate_metrics']['avg_answer_relevance']:.3f}")
+        print(f"Average Latency: {results['aggregate_metrics']['avg_latency_ms']:.1f}ms")
+        print(f"\nDetailed results saved to: {evaluator.results_dir}")
+    except Exception as e:
+        logger.error(f"Error running evaluation: {e}")
+        raise e
 
 
-def process_pdf(pdf_path: str, vectorstore_path: str = "vector_store"):
+def process_pdf(pdf_path: str, vectorstore_path: str = "vector_store", chunking_strategy: str = "simple", chunker_kwargs: Optional[Dict] = None):
     try:
         from src.document_processor import DocumentProcessor
         from src.vector_store import VectorStore
 
-        logger.info("Processing PDF document...")
-        processor = DocumentProcessor()
+        logger.info(f"Processing PDF document using {chunking_strategy} chunking...")
+        processor = DocumentProcessor(chunking_strategy=chunking_strategy, chunker_kwargs=chunker_kwargs)
         chunks = processor.process_pdf(pdf_path)
 
         logger.info(f"Extracted {len(chunks)} chunks from PDF")
+        
+        # Get and display chunking statistics
+        stats = processor.get_chunker_stats(chunks)
+        logger.info(f"Chunking statistics: {stats}")
 
         logger.info("Building vector store...")
         store = VectorStore(store_path=vectorstore_path)
@@ -83,19 +121,30 @@ def process_pdf(pdf_path: str, vectorstore_path: str = "vector_store"):
 
         logger.info("Vector store created successfully!")
         logger.info(f"Stats: {store.get_stats()}")
+        
+        # Save metadata about chunking strategy
+        import json
+        metadata_path = os.path.join(vectorstore_path, "chunking_metadata.json")
+        with open(metadata_path, 'w') as f:
+            json.dump({
+                "chunking_strategy": chunking_strategy,
+                "chunker_kwargs": chunker_kwargs or {},
+                "stats": stats
+            }, f, indent=2)
+        logger.info(f"Saved chunking metadata to {metadata_path}")
 
     except Exception as e:
         logger.error(f"Error processing PDF: {e}")
         raise e
 
 
-def run_interactive_chat(vectorstore_path: Optional[str] = None):
+def run_interactive_chat(vectorstore_path: Optional[str] = None, use_hybrid: bool = False, use_optimized: bool = False):
 
     async def chat_main():
         try:
             from src.mcp_client import RAGMCPChatUI, RAGMCPClient
 
-            client = RAGMCPClient(vectorstore_path=vectorstore_path)
+            client = RAGMCPClient(vectorstore_path=vectorstore_path, use_hybrid=use_hybrid, use_optimized=use_optimized)
 
             async with client:
                 chat_ui = RAGMCPChatUI(client)
@@ -124,9 +173,29 @@ def main():
         help="Path to vector store directory",
         default="vector_store",
     )
+    chat_parser.add_argument(
+        "--use-hybrid",
+        action="store_true",
+        help="Use hybrid RAG pipeline instead of standard RAG",
+    )
+    chat_parser.add_argument(
+        "--use-optimized",
+        action="store_true", 
+        help="Use optimized RAG pipeline instead of standard RAG",
+    )
 
     # Evaluation command
-    subparsers.add_parser("eval", help="Run the evaluation suite")
+    eval_parser = subparsers.add_parser("eval", help="Run the evaluation suite")
+    eval_parser.add_argument(
+        "--use-hybrid",
+        action="store_true",
+        help="Use hybrid RAG pipeline instead of standard RAG",
+    )
+    eval_parser.add_argument(
+        "--use-optimized",
+        action="store_true",
+        help="Use optimized RAG pipeline instead of standard RAG",
+    )
 
     # PDF processing commands
     pdf_parser = subparsers.add_parser(
@@ -145,6 +214,35 @@ def main():
         default="vector_store",
         help="Output directory for the vector store (default: vector_store)",
     )
+    pdf_parser.add_argument(
+        "--chunking",
+        dest="chunking_strategy",
+        default="simple",
+        choices=["simple", "sentence", "semantic", "structural", "hybrid", "paragraph", "sliding_window"],
+        help="Chunking strategy to use (default: simple)",
+    )
+    pdf_parser.add_argument(
+        "--chunk-size",
+        type=int,
+        default=500,
+        help="Target chunk size in characters (default: 500)",
+    )
+    pdf_parser.add_argument(
+        "--chunk-overlap",
+        type=int,
+        default=50,
+        help="Overlap between chunks for simple chunking (default: 50)",
+    )
+    pdf_parser.add_argument(
+        "--window-size",
+        type=int,
+        help="Window size for sliding window chunking",
+    )
+    pdf_parser.add_argument(
+        "--step-size",
+        type=int,
+        help="Step size for sliding window chunking",
+    )
 
     args = parser.parse_args()
 
@@ -155,13 +253,33 @@ def main():
         logger.info("Debug mode enabled")
 
     if args.command == "chat":
-        run_interactive_chat(getattr(args, "vectorstore_path", None))
+        run_interactive_chat(
+            vectorstore_path=getattr(args, "vectorstore_path", None),
+            use_hybrid=getattr(args, "use_hybrid", False),
+            use_optimized=getattr(args, "use_optimized", False)
+        )
     elif args.command == "eval":
-        run_evaluation()
+        run_evaluation(use_hybrid=getattr(args, "use_hybrid", False), use_optimized=getattr(args, "use_optimized", False))
     elif args.command == "process-pdf":
+        # Prepare chunker kwargs based on command line arguments
+        chunker_kwargs = {
+            "chunk_size": getattr(args, "chunk_size", 500),
+        }
+        
+        # Add strategy-specific parameters
+        if args.chunking_strategy == "simple":
+            chunker_kwargs["overlap"] = getattr(args, "chunk_overlap", 50)
+        elif args.chunking_strategy == "sliding_window":
+            if hasattr(args, "window_size") and args.window_size:
+                chunker_kwargs["window_size"] = args.window_size
+            if hasattr(args, "step_size") and args.step_size:
+                chunker_kwargs["step_size"] = args.step_size
+        
         process_pdf(
             pdf_path=getattr(args, "pdf_path"),
             vectorstore_path=getattr(args, "vectorstore_path"),
+            chunking_strategy=getattr(args, "chunking_strategy", "simple"),
+            chunker_kwargs=chunker_kwargs
         )
     else:
         parser.print_help()

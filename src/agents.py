@@ -3,7 +3,7 @@ from typing import List, Tuple, Literal
 
 from transformers.pipelines import pipeline as hf_pipeline
 
-from src.config import EARLY_STOPPING, GEN_MODEL, MAX_NEW_TOKENS, NUM_BEAMS
+from src.config import EARLY_STOPPING, GEN_MODEL, MAX_NEW_TOKENS, NUM_BEAMS, TEMPERATURE
 from src.rag import BaseRAGPipeline
 
 logger = logging.getLogger(__name__)
@@ -22,6 +22,7 @@ class BaseAgent:
             max_new_tokens=MAX_NEW_TOKENS,
             num_beams=NUM_BEAMS,
             early_stopping=EARLY_STOPPING,
+            temperature=TEMPERATURE,
         )
         self._tokenizer = self._gen.tokenizer
 
@@ -55,12 +56,12 @@ class BaseAgent:
 
 
 class RAGAgent(BaseAgent):
-    SYSTEM_PROMPT = (
-        "You are an advanced AI aviation expert with expertise in all areas of flight, aircraft systems, and aviation regulations. "
-        "You engage in thoughtful conversations about aviation, using chain-of-thought reasoning. "
-        "For each question, first analyze the provided context, think step by step, then provide a clear answer. "
-        "Consider previous conversation context when relevant. Be accurate, educational, and engaging."
-    )
+    SYSTEM_PROMPT = """You are an aviation expert. Answer questions about flight, aircraft, and aviation regulations.
+Instructions:
+- Use the provided context to answer accurately
+- Be clear and precise with technical terms
+- If context is insufficient, say so
+- Keep answers focused on the specific question asked"""
 
     CONTEXT_TEMPLATE = (
         "Previous conversation context:\n{chat_history}\n\n"
@@ -68,7 +69,7 @@ class RAGAgent(BaseAgent):
         "Relevant context from documents:\n{snippets}\n\n"
         "Answer:"
     )
-
+    
     def __init__(self, rag_pipeline: BaseRAGPipeline):
         super().__init__(self.SYSTEM_PROMPT)
         self.rag = rag_pipeline
@@ -93,6 +94,8 @@ class RAGAgent(BaseAgent):
         logger.debug(f"Processing question: {question}")
 
         content, sources = self.rag.run(question)
+        logger.debug(f"Content: {content}")
+        logger.debug(f"Sources: {sources}")
         content_text = (
             "\n\n".join(content) if content else "No specific context available."
         )

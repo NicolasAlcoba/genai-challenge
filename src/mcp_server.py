@@ -40,9 +40,11 @@ class RAGMCPServer:
     """MCP Server for RAG pipeline operations"""
 
     def __init__(
-        self, vectorstore_path: Optional[str] = None, pdf_path: Optional[str] = None
+        self, vectorstore_path: Optional[str] = None, pdf_path: Optional[str] = None,
+        use_hybrid: bool = False
     ):
         self.server = Server("rag-server")
+        self.use_hybrid = use_hybrid
         self.rag_pipeline = self._initialize_rag_pipeline(vectorstore_path, pdf_path)
 
         if self.rag_pipeline is None:
@@ -58,12 +60,20 @@ class RAGMCPServer:
         if vectorstore_path:
             logger.info(f"Loading vector store from {vectorstore_path}")
             try:
-                from src.rag import VectorStoreRAGPipeline
+                if self.use_hybrid:
+                    from src.hybrid_rag import ImprovedVectorStoreRAGPipeline
+                    logger.info("Using Hybrid RAG Pipeline")
+                else:
+                    from src.rag import VectorStoreRAGPipeline
+                    logger.info("Using Standard RAG Pipeline")
                 from src.vector_store import VectorStore
 
                 store = VectorStore(store_path=vectorstore_path)
                 if store.load():
-                    rag_pipeline = VectorStoreRAGPipeline(vector_store=store)
+                    if self.use_hybrid:
+                        rag_pipeline = ImprovedVectorStoreRAGPipeline(vector_store=store)
+                    else:
+                        rag_pipeline = VectorStoreRAGPipeline(vector_store=store)
                     logger.info(
                         f"✅ Successfully loaded vector store with {store.get_stats()['num_documents']} documents (LLM enabled)"
                     )
@@ -80,7 +90,12 @@ class RAGMCPServer:
             logger.info(f"Loading PDF from {pdf_path}")
             try:
                 from src.document_processor import DocumentProcessor
-                from src.rag import VectorStoreRAGPipeline
+                if self.use_hybrid:
+                    from src.hybrid_rag import ImprovedVectorStoreRAGPipeline
+                    logger.info("Using Hybrid RAG Pipeline")
+                else:
+                    from src.rag import VectorStoreRAGPipeline
+                    logger.info("Using Standard RAG Pipeline")
                 from src.vector_store import VectorStore
 
                 if not os.path.exists(pdf_path):
@@ -98,20 +113,30 @@ class RAGMCPServer:
                 store = VectorStore()
                 store.add_documents(chunks)
 
-                rag_pipeline = VectorStoreRAGPipeline(vector_store=store)
+                if self.use_hybrid:
+                    rag_pipeline = ImprovedVectorStoreRAGPipeline(vector_store=store)
+                else:
+                    rag_pipeline = VectorStoreRAGPipeline(vector_store=store)
+
                 logger.info("PDF successfully processed and indexed (LLM enabled)")
                 return rag_pipeline
             except Exception as e:
                 logger.error(f"Error processing PDF: {e}")
                 logger.info("Falling back to basic corpus")
 
-        logger.info("Using default basic corpus")
+        # Otherwise, use the basic corpus
+        logger.info("No vector store or PDF provided, using basic corpus")
         try:
-            from src.rag import VectorStoreRAGPipeline
+            if self.use_hybrid:
+                from src.hybrid_rag import ImprovedVectorStoreRAGPipeline
+                logger.info("Using Hybrid RAG Pipeline with basic corpus")
+            else:
+                from src.rag import VectorStoreRAGPipeline
+                logger.info("Using Standard RAG Pipeline with basic corpus")
             from src.vector_store import VectorStore
 
             store = VectorStore()
-
+            
             basic_chunks = []
             for i, text in enumerate(BASIC_CORPUS):
                 basic_chunks.append(
@@ -122,9 +147,12 @@ class RAGMCPServer:
                         "source": "basic_corpus",
                     }
                 )
-
+            
             store.add_documents(basic_chunks)
-            rag_pipeline = VectorStoreRAGPipeline(vector_store=store)
+            if self.use_hybrid:
+                rag_pipeline = ImprovedVectorStoreRAGPipeline(vector_store=store)
+            else:
+                rag_pipeline = VectorStoreRAGPipeline(vector_store=store)
             logger.info("Successfully initialized with basic corpus")
             return rag_pipeline
         except Exception as e:
@@ -444,9 +472,10 @@ async def main():
     parser = argparse.ArgumentParser(description="RAG MCP Server")
     parser.add_argument("--vectorstore", help="Path to vector store directory")
     parser.add_argument("--pdf", help="Path to PDF file to process")
+    parser.add_argument("--use-hybrid", action="store_true", help="Use hybrid RAG pipeline")
     args = parser.parse_args()
 
-    server = RAGMCPServer(vectorstore_path=args.vectorstore, pdf_path=args.pdf)
+    server = RAGMCPServer(vectorstore_path=args.vectorstore, pdf_path=args.pdf, use_hybrid=args.use_hybrid)
     await server.run()
 
 
